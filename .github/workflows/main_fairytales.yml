@@ -1,7 +1,4 @@
-# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
-# More GitHub Actions for Azure: https://github.com/Azure/actions
-
-name: Build and deploy PHP app to Azure Web App - FairyTales
+name: Build and deploy Laravel app to Azure Web App - FairyTales
 
 on:
   push:
@@ -12,65 +9,71 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read #This is required for actions/checkout
-
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Setup PHP
+      - name: Set up PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.4'
+          php-version: '8.3'
+          extensions: mbstring, bcmath, intl, pdo_mysql
+          tools: composer
 
-      - name: Check if composer.json exists
-        id: check_files
-        uses: andstor/file-existence-action@v1
-        with:
-          files: 'composer.json'
+      - name: Install dependencies
+        run: composer install --no-dev --optimize-autoloader
 
-      - name: Run composer install if composer.json exists
-        if: steps.check_files.outputs.files_exists == 'true'
-        run: composer validate --no-check-publish && composer install --prefer-dist --no-progress
+      - name: Generate optimized Laravel files
+        run: |
+          cp .env.example .env
+          php artisan config:cache
+          php artisan route:cache
+          php artisan view:cache
 
-      - name: Zip artifact for deployment
-        run: zip release.zip ./* -r
+      - name: Zip ONLY public/ and necessary folders
+        run: |
+          mkdir deploy
+          cp -r public deploy/public
+          cp -r vendor deploy/vendor
+          cp -r bootstrap deploy/bootstrap
+          cp -r storage deploy/storage
+          cp artisan deploy/
+          cp server.php deploy/
+          cd deploy
+          zip -r ../release.zip .
 
-      - name: Upload artifact for deployment job
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: php-app
+          name: laravel-app
           path: release.zip
 
   deploy:
     runs-on: ubuntu-latest
     needs: build
-    
     permissions:
-      id-token: write #This is required for requesting the JWT
-      contents: read #This is required for actions/checkout
+      id-token: write
+      contents: read
 
     steps:
-      - name: Download artifact from build job
+      - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          name: php-app
+          name: laravel-app
 
-      - name: Unzip artifact for deployment
+      - name: Unzip artifact
         run: unzip release.zip
-      
+
       - name: Login to Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_338FC3D65DD24ED1939F0FEF009A5099 }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_6F47003084D847CD8748315C25D2AE17 }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_1E82D0BE05984247B77FD6E13BB96D0D }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: 'Deploy to Azure Web App'
+      - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
-        id: deploy-to-webapp
         with:
           app-name: 'FairyTales'
           slot-name: 'Production'
           package: .
-          
